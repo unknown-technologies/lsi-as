@@ -1,0 +1,4 @@
+build
+lsi-as
+*.sw?
+*.s

@@ -9,12 +9,13 @@ void ASInit(AS* as)
 	as->buf = (char*) malloc(256);
 	as->mnemonic = as->buf;
 	as->labels = NULL;
-	as->size = 32;
+	as->size = 65535;
 	as->code = (u16*) malloc(as->size * sizeof(u16));
 	as->wr = 0;
 	as->rd = 0;
 	as->state = 0;
 	as->pc = 0;
+	as->org = as->pc;
 }
 
 void ASDestroy(AS* as)
@@ -46,14 +47,49 @@ void ASSetSource(AS* as, const char* source)
 #define	STATE_DIRECTIVE	9
 #define	STATE_DIR_SEP	10
 #define	STATE_DIR_ARG	11
-#define	STATE_EOL	12
-#define	STATE_END	13
-#define	STATE_ERROR	14
+#define	STATE_STR	12
+#define	STATE_STR_ESC	13
+#define	STATE_EOL	14
+#define	STATE_END	15
+#define	STATE_ERROR	16
 
-void ASError(AS* as, const char* msg)
+static void ASPrintPrev(AS* as)
 {
+	int i;
+	for(i = 16; i >= 0; i--) {
+		if(as->rd - i < 0) {
+			continue;
+		} else {
+			const char c = as->source[as->rd - i];
+			printf("%c", c);
+		}
+	}
+}
+
+static void ASPrintNext(AS* as)
+{
+	int i;
+	for(i = 0; i < 16; i++) {
+		const char c = as->source[as->rd + i];
+		if(c == 0) {
+			break;
+		} else {
+			printf("%c", c);
+		}
+	}
+}
+
+#define ASError(as, msg) __ASError(as, __LINE__, msg)
+
+void __ASError(AS* as, int line, const char* msg)
+{
+	printf("[%d] Error: %s [state=%d,rd=%d]\n", line, msg, as->state, as->rd);
+	printf("<<< ");
+	ASPrintPrev(as);
+	printf("\n>>> ");
+	ASPrintNext(as);
+	printf("\n");
 	as->state = STATE_ERROR;
-	printf("Error: %s\n", msg);
 }
 
 #define	MATCH(mnemo)	!strcmp(as->mnemonic, mnemo)
@@ -102,6 +138,49 @@ WRITE(opcd | ASGetOffset(as, as->arg1))
 	as->code[wr_save] |= ASWriteOperand(as, as->arg2); \
 }
 
+#define	WRITERTS(opcd)	{ \
+	if(!as->arg1) { \
+		ASError(as, "missing operand"); \
+		return; \
+	} \
+	WRITE(opcd | (ASGetRegister(as, as->arg1))); \
+}
+
+#define	WRITETRAP(opcd)	{ \
+	if(!as->arg1) { \
+		ASError(as, "missing operand"); \
+		return; \
+	} \
+	WRITE(opcd | (ASGetNumber(as, as->arg1))); \
+}
+
+/* TODO! */
+#define	WRITESOB(opcd)	{ \
+	u16 offset; \
+	LABEL* lbl; \
+	if(!as->arg1 || !as->arg2) { \
+		ASError(as, "missing operand"); \
+		return; \
+	} \
+	lbl = ASFindLabel(as, as->arg2); \
+	if(!lbl) { \
+		ASError(as, "invalid target"); \
+		return; \
+	} \
+	offset = (as->pc - lbl->addr) / 2 + 1; \
+	WRITE(opcd | (ASGetRegister(as, as->arg1) << 6) | (offset & 077)); \
+}
+
+#define	WRITEEIS(opcd)	{ \
+	u16 wr_save = as->wr; \
+	if(!as->arg1 || !as->arg2) { \
+		ASError(as, "missing operand"); \
+		return; \
+	} \
+	WRITE(opcd | (ASGetRegister(as, as->arg1) << 6)); \
+	as->code[wr_save] |= ASWriteOperand(as, as->arg2); \
+}
+
 #define	STATE_DEF	20
 #define	STATE_IMM	21
 #define	STATE_IMM0	22
@@ -109,8 +188,9 @@ WRITE(opcd | ASGetOffset(as, as->arg1))
 #define	STATE_AD	24
 #define	STATE_R		25
 #define	STATE_MEM	26
-#define	STATE_IDX	27
-#define	STATE_LBL	28
+#define	STATE_MEM_PAR	27
+#define	STATE_IDX	28
+#define	STATE_LBL	29
 
 int ASCheckLabel(const char* s)
 {
@@ -287,6 +367,21 @@ u16 ASGetRegister(AS* as, const char* r)
 	}
 }
 
+u16 ASGetNumber(AS* as, const char* s)
+{
+	u16 val = 0;
+	for(; *s; s++) {
+		if(*s >= '0' && *s <= '7') {
+			val <<= 3;
+			val |= *s - '0';
+		} else {
+			ASError(as, "invalid character");
+			return 0;
+		}
+	}
+	return val;
+}
+
 u16 ASWriteOperand(AS* as, char* arg)
 {
 	int i;
@@ -294,6 +389,7 @@ u16 ASWriteOperand(AS* as, char* arg)
 	int def = 0;
 	char* name = NULL;
 	u16 value = 0;
+	int ad = 0;
 	for(i = 0; 1; i++) {
 		const char c = arg[i];
 		switch(state) {
@@ -311,6 +407,7 @@ u16 ASWriteOperand(AS* as, char* arg)
 						state = STATE_BOL;
 						break;
 					case '-':
+						ad = 1;
 						state = STATE_AD;
 						break;
 					case 'R':
@@ -318,6 +415,7 @@ u16 ASWriteOperand(AS* as, char* arg)
 						break;
 					case '(':
 						state = STATE_MEM;
+						name = &arg[i + 1];
 						break;
 					case '0':
 					case '1':
@@ -428,11 +526,59 @@ u16 ASWriteOperand(AS* as, char* arg)
 					return 0;
 				}
 				break;
+			case STATE_AD:
+				if(c != '(') {
+					ASError(as, "invalid character");
+					return 0;
+				} else {
+					name = &arg[i + 1];
+					state = STATE_MEM;
+				}
+				break;
+			case STATE_MEM:
+				if(c == ')') {
+					state = STATE_MEM_PAR;
+					arg[i] = 0;
+				} else if(!(((c >= 'A') && (c <= 'Z'))
+						|| ((c >= 'a') && (c <= 'z'))
+						|| ((c >= '0') && (c <= '9'))
+						|| (c == '_'))) {
+					ASError(as, "invalid operand");
+					return 0;
+				} else if(c == 0) {
+					ASError(as, "invalid character");
+					return 0;
+				}
+				break;
+			case STATE_MEM_PAR:
+				if(c == '+') {
+					u16 reg = ASGetRegister(as, name);
+					if(ad) {
+						ASError(as, "cannot use autoincrement and autodecrement at the same time");
+						return 0;
+					} else {
+						return reg | def | 020;
+					}
+				} else if(c == 0) {
+					u16 reg = ASGetRegister(as, name);
+					if(ad) {
+						return reg | def | 040;
+					} else if(!def) {
+						return reg | 010;
+					} else {
+						ASError(as, "invalid usage of @");
+						return 0;
+					}
+				} else {
+					ASError(as, "invalid character");
+					return 0;
+				}
+				break;
 			case STATE_LBL:
 				if(c == 0) {
 					if(!strcmp(name, "PC")) {
 						return 007 | def;
-					} else if(!strcmp(name, "PC")) {
+					} else if(!strcmp(name, "SP")) {
 						return 006 | def;
 					} else {
 						LABEL* lbl = ASFindLabel(as, name);
@@ -473,7 +619,6 @@ u16 ASWriteOperand(AS* as, char* arg)
 		}
 	}
 	ASError(as, "internal compiler error");
-	printf("operand: '%s'\n", arg);
 	return 0;
 }
 
@@ -537,8 +682,8 @@ const INSN insns[] = {
 	{"BISB",	0150000, INSN_DOUBLE},
 	{"XOR",		0074000, INSN_JSR},
 	{"JSR",		0004000, INSN_JSR},
-	{"SOB",		0077000, INSN_JSR},
 	{"RTS",		0000200, INSN_RTS},
+	{"SOB",		0077000, INSN_SOB},
 	{"BR",		0000400, INSN_BRANCH},
 	{"BNE",		0001000, INSN_BRANCH},
 	{"BEQ",		0001400, INSN_BRANCH},
@@ -558,6 +703,10 @@ const INSN insns[] = {
 	{"BLO",		0103400, INSN_BRANCH},
 	{"EMT",		0104000, INSN_TRAP},
 	{"TRAP",	0104400, INSN_TRAP},
+	{"MUL",		0070000, INSN_EIS},
+	{"DIV",		0071000, INSN_EIS},
+	{"ASH",		0072000, INSN_EIS},
+	{"ASHC",	0073000, INSN_EIS},
 };
 
 #define	INSNCNT		sizeof(insns) / sizeof(*insns)
@@ -585,6 +734,18 @@ void ASAssemble(AS* as)
 				case INSN_JSR:
 					WRITEJSR(insn->opcd);
 					break;
+				case INSN_RTS:
+					WRITERTS(insn->opcd);
+					break;
+				case INSN_SOB:
+					WRITESOB(insn->opcd);
+					break;
+				case INSN_TRAP:
+					WRITETRAP(insn->opcd);
+					break;
+				case INSN_EIS:
+					WRITEEIS(insn->opcd);
+					break;
 				default:
 					ASError(as, "Unknown instruction type");
 					break;
@@ -599,6 +760,9 @@ void ASDirective(AS* as, const char* name, u16 arg)
 {
 	if(!strcmp(name, "ORG")) {
 		as->pc = arg;
+		as->org = arg;
+	} else if(!strcmp(name, "WORD")) {
+		WRITE(arg);
 	} else {
 		ASError(as, "unknown directive");
 	}
@@ -607,6 +771,7 @@ void ASDirective(AS* as, const char* name, u16 arg)
 void ASStep(AS* as)
 {
 	LABEL* lbl;
+	u8 ch;
 
 	const char c = as->source[as->rd++];
 
@@ -628,6 +793,10 @@ void ASStep(AS* as)
 					break;
 				case '.':
 					as->state = STATE_DIRECTIVE;
+					as->bufp = 0;
+					break;
+				case '"':
+					as->state = STATE_STR;
 					as->bufp = 0;
 					break;
 				default:
@@ -697,6 +866,10 @@ void ASStep(AS* as)
 					break;
 				case ';':
 					as->state = STATE_COMMENT;
+					break;
+				case '"':
+					as->state = STATE_STR;
+					as->bufp = 0;
 					break;
 				case ' ':
 				case '\t':
@@ -768,6 +941,9 @@ void ASStep(AS* as)
 						|| (c == '.')
 						|| (c == '(')
 						|| (c == ')')
+						|| (c == '-')
+						|| (c == '+')
+						|| (c == '-')
 						|| (c == '@')
 						|| (c == '#')) {
 						as->buf[as->bufp++] = c;
@@ -782,15 +958,23 @@ void ASStep(AS* as)
 				case '\r':
 				case '\n':
 					as->state = STATE_BOL;
+					as->buf[as->bufp++] = 0;
 					ASAssemble(as);
 					break;
 				case ';':
 					as->state = STATE_COMMENT;
+					as->buf[as->bufp++] = 0;
 					ASAssemble(as);
 					break;
 				case ',':
 					as->buf[as->bufp++] = 0;
 					as->state = STATE_SEP;
+					break;
+				case ' ':
+				case '\t':
+					as->buf[as->bufp++] = 0;
+					as->state = STATE_EOL;
+					ASAssemble(as);
 					break;
 				default:
 					if((c >= 'a' && c <= 'z')
@@ -800,6 +984,8 @@ void ASStep(AS* as)
 						|| (c == '.')
 						|| (c == '(')
 						|| (c == ')')
+						|| (c == '+')
+						|| (c == '-')
 						|| (c == '@')
 						|| (c == '#')) {
 						as->buf[as->bufp++] = c;
@@ -826,6 +1012,8 @@ void ASStep(AS* as)
 						|| (c == '.')
 						|| (c == '(')
 						|| (c == ')')
+						|| (c == '+')
+						|| (c == '-')
 						|| (c == '@')
 						|| (c == '#')) {
 						as->arg2 = &as->buf[as->bufp];
@@ -861,6 +1049,8 @@ void ASStep(AS* as)
 						|| (c == '.')
 						|| (c == '(')
 						|| (c == ')')
+						|| (c == '+')
+						|| (c == '-')
 						|| (c == '@')
 						|| (c == '#')) {
 						as->buf[as->bufp++] = c;
@@ -948,6 +1138,70 @@ void ASStep(AS* as)
 					}
 					break;
 			}
+			break;
+		case STATE_STR:
+			switch(c) {
+				case '\\':
+					as->state = STATE_STR_ESC;
+					break;
+				case '"':
+					if(as->bufp) {
+						WRITE(as->buf[0]);
+						as->bufp = 0;
+					} else {
+						WRITE(0);
+					}
+					as->state = STATE_SPACE;
+					break;
+				case '\r':
+				case '\n':
+					ASError(as, "invalid character");
+					return;
+				default:
+					if(as->bufp == 0) {
+						as->buf[0] = c;
+						as->bufp = 1;
+					} else {
+						WRITE(as->buf[0] | (c << 8));
+						as->bufp = 0;
+					}
+			}
+			break;
+		case STATE_STR_ESC:
+			switch(c) {
+				case 'n':
+					ch = '\n';
+					break;
+				case 'r':
+					ch = '\r';
+					break;
+				case 't':
+					ch = '\t';
+					break;
+				case '0':
+					ch = 0;
+					break;
+				case '\\':
+					ch = '\\';
+					break;
+				case '\'':
+					ch = '\'';
+					break;
+				case '"':
+					ch = '"';
+					break;
+				default:
+					ASError(as, "invalid character");
+					return;
+			}
+			if(as->bufp == 0) {
+				as->buf[0] = ch;
+				as->bufp = 1;
+			} else {
+				WRITE(as->buf[0] | (ch << 8));
+				as->bufp = 0;
+			}
+			as->state = STATE_STR;
 			break;
 		case STATE_EOL:
 			switch(c) {

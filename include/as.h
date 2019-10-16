@@ -21,7 +21,9 @@
 #define	INSN_BRANCH	3
 #define	INSN_JSR	4
 #define	INSN_RTS	5
-#define	INSN_TRAP	6
+#define	INSN_SOB	6
+#define	INSN_TRAP	7
+#define	INSN_EIS	8
 
 /* data structures */
 typedef struct {
@@ -62,11 +64,13 @@ typedef struct {
 	u16		bufp;
 	u16		state;
 	u16		pc;
+	u16		org;
 } AS;
 
 void ASInit(AS* as);
 void ASDestroy(AS* as);
 void ASSetSource(AS* as, const char* source);
 void ASCompile(AS* as);
+LABEL* ASFindLabel(AS* as, const char* name);
 
 #endif

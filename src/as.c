@@ -47,11 +47,12 @@ void ASSetSource(AS* as, const char* source)
 #define	STATE_DIRECTIVE	9
 #define	STATE_DIR_SEP	10
 #define	STATE_DIR_ARG	11
-#define	STATE_STR	12
-#define	STATE_STR_ESC	13
-#define	STATE_EOL	14
-#define	STATE_END	15
-#define	STATE_ERROR	16
+#define	STATE_DIR_LABEL	12
+#define	STATE_STR	13
+#define	STATE_STR_ESC	14
+#define	STATE_EOL	15
+#define	STATE_END	16
+#define	STATE_ERROR	17
 
 static void ASPrintPrev(AS* as)
 {
@@ -61,6 +62,9 @@ static void ASPrintPrev(AS* as)
 			continue;
 		} else {
 			const char c = as->source[as->rd - i];
+			if(c == 0) {
+				return;
+			}
 			printf("%c", c);
 		}
 	}
@@ -69,10 +73,17 @@ static void ASPrintPrev(AS* as)
 static void ASPrintNext(AS* as)
 {
 	int i;
+
+	if(as->rd - 1 > 0) {
+		if(!as->source[as->rd - 1]) {
+			return;
+		}
+	}
+
 	for(i = 0; i < 16; i++) {
 		const char c = as->source[as->rd + i];
 		if(c == 0) {
-			break;
+			return;
 		} else {
 			printf("%c", c);
 		}
@@ -190,7 +201,13 @@ WRITE(opcd | ASGetOffset(as, as->arg1))
 #define	STATE_MEM	26
 #define	STATE_MEM_PAR	27
 #define	STATE_IDX	28
-#define	STATE_LBL	29
+#define	STATE_IDX_LPAR	29
+#define	STATE_IDX_R	30
+#define	STATE_IDX_S	31
+#define	STATE_IDX_P	32
+#define	STATE_IDX_RPAR	33
+#define	STATE_IDX_END	34
+#define	STATE_LBL	35
 
 int ASCheckLabel(const char* s)
 {
@@ -389,6 +406,7 @@ u16 ASWriteOperand(AS* as, char* arg)
 	int def = 0;
 	char* name = NULL;
 	u16 value = 0;
+	u8 reg = 0;
 	int ad = 0;
 	for(i = 0; 1; i++) {
 		const char c = arg[i];
@@ -425,6 +443,7 @@ u16 ASWriteOperand(AS* as, char* arg)
 					case '5':
 					case '6':
 					case '7':
+						value = c - '0';
 						state = STATE_IDX;
 						break;
 					default:
@@ -604,10 +623,100 @@ u16 ASWriteOperand(AS* as, char* arg)
 						}
 						return 067 | def;
 					}
+				} else if(c == '(') {
+					/* this is an index */
+					LABEL* lbl;
+					arg[i] = 0;
+					lbl = ASFindLabel(as, name);
+					if(!lbl) {
+						lbl = (LABEL*) malloc(sizeof(LABEL));
+						lbl->name = strdup(name);
+						lbl->resolved = 0;
+						lbl->next = as->labels;
+						as->labels = lbl;
+					}
+					if(lbl->resolved) {
+						value = lbl->addr;
+					} else {
+						FIXUP* fix = (FIXUP*) malloc(sizeof(FIXUP));
+						fix->label = lbl;
+						fix->addr = as->pc + 2;
+						fix->pos = as->wr;
+						fix->type = FIXUP_ABS;
+						fix->next = as->fixups;
+						as->fixups = fix;
+					}
+					state = STATE_IDX_LPAR;
 				} else if(!(((c >= 'A') && (c <= 'Z'))
 						|| ((c >= 'a') && (c <= 'z'))
 						|| ((c >= '0') && (c <= '9'))
 						|| (c == '_'))) {
+					ASError(as, "invalid operand");
+					return 0;
+				}
+				break;
+			case STATE_IDX:
+				if((c >= '0') && (c <= '7')) {
+					value <<= 3;
+					value |= c - '0';
+				} else if(c == '(') {
+					state = STATE_IDX_LPAR;
+				} else {
+					ASError(as, "invalid index");
+					return 0;
+				}
+				break;
+			case STATE_IDX_LPAR:
+				if(c == 'R') {
+					state = STATE_IDX_R;
+				} else if(c == 'P') {
+					state = STATE_IDX_P;
+				} else if(c == 'S') {
+					state = STATE_IDX_S;
+				} else {
+					ASError(as, "invalid register");
+					return 0;
+				}
+				break;
+			case STATE_IDX_R:
+				if((c >= '0') && (c <= '7')) {
+					reg = c - '0';
+					state = STATE_IDX_RPAR;
+				} else {
+					ASError(as, "inavlid register");
+					return 0;
+				}
+				break;
+			case STATE_IDX_P:
+				if(c != 'C') {
+					ASError(as, "invalid register");
+					return 0;
+				} else {
+					reg = 7;
+					state = STATE_IDX_RPAR;
+				}
+				break;
+			case STATE_IDX_S:
+				if(c != 'P') {
+					ASError(as, "invalid register");
+					return 0;
+				} else {
+					reg = 6;
+					state = STATE_IDX_RPAR;
+				}
+				break;
+			case STATE_IDX_RPAR:
+				if(c != ')') {
+					ASError(as, "expected ')'");
+					return 0;
+				}
+				state = STATE_IDX_END;
+				break;
+			case STATE_IDX_END:
+				if(c == 0) {
+					WRITE(value);
+					return 060 | reg | def;
+				} else {
 					ASError(as, "invalid operand");
 					return 0;
 				}
@@ -639,6 +748,8 @@ const INSN insns[] = {
 	{"SEZ",		0000264, INSN_NONE},
 	{"SEN",		0000270, INSN_NONE},
 	{"SCC",		0000277, INSN_NONE},
+	{"NOP",		0000240, INSN_NONE},
+	{"NOP1",	0000260, INSN_NONE},
 	{"CLR",		0005000, INSN_SINGLE},
 	{"CLRB",	0105000, INSN_SINGLE},
 	{"COM",		0005100, INSN_SINGLE},
@@ -673,7 +784,7 @@ const INSN insns[] = {
 	{"CMP",		0020000, INSN_DOUBLE},
 	{"CMPB",	0120000, INSN_DOUBLE},
 	{"ADD",		0060000, INSN_DOUBLE},
-	{"ADDB",	0160000, INSN_DOUBLE},
+	{"SUB",		0160000, INSN_DOUBLE},
 	{"BIT",		0030000, INSN_DOUBLE},
 	{"BITB",	0130000, INSN_DOUBLE},
 	{"BIC",		0040000, INSN_DOUBLE},
@@ -693,10 +804,10 @@ const INSN insns[] = {
 	{"BVS",		0102400, INSN_BRANCH},
 	{"BCC",		0103000, INSN_BRANCH},
 	{"BCS",		0103400, INSN_BRANCH},
-	{"BGE",		0020000, INSN_BRANCH},
-	{"BLT",		0020400, INSN_BRANCH},
-	{"BGT",		0030000, INSN_BRANCH},
-	{"BLE",		0030400, INSN_BRANCH},
+	{"BGE",		0002000, INSN_BRANCH},
+	{"BLT",		0002400, INSN_BRANCH},
+	{"BGT",		0003000, INSN_BRANCH},
+	{"BLE",		0003400, INSN_BRANCH},
 	{"BHI",		0101000, INSN_BRANCH},
 	{"BLOS",	0101400, INSN_BRANCH},
 	{"BHIS",	0103000, INSN_BRANCH},
@@ -765,6 +876,30 @@ void ASDirective(AS* as, const char* name, u16 arg)
 		WRITE(arg);
 	} else {
 		ASError(as, "unknown directive");
+	}
+}
+
+void ASDirectiveResolveLabel(AS* as, const char* name)
+{
+	LABEL* lbl = ASFindLabel(as, name);
+	if(!lbl) {
+		lbl = (LABEL*) malloc(sizeof(LABEL));
+		lbl->name = strdup(name);
+		lbl->resolved = 0;
+		lbl->next = as->labels;
+		as->labels = lbl;
+	}
+	if(lbl->resolved) {
+		ASDirective(as, as->buf, lbl->addr);
+	} else {
+		FIXUP* fix = (FIXUP*) malloc(sizeof(FIXUP));
+		fix->label = lbl;
+		fix->addr = as->pc;
+		fix->pos = as->wr;
+		fix->type = FIXUP_ABS;
+		fix->next = as->fixups;
+		as->fixups = fix;
+		ASDirective(as, as->buf, 0);
 	}
 }
 
@@ -866,6 +1001,10 @@ void ASStep(AS* as)
 					break;
 				case ';':
 					as->state = STATE_COMMENT;
+					break;
+				case '.':
+					as->state = STATE_DIRECTIVE;
+					as->bufp = 0;
 					break;
 				case '"':
 					as->state = STATE_STR;
@@ -1105,10 +1244,20 @@ void ASStep(AS* as)
 				case '\t':
 					/* ignore */
 					break;
+				case ';':
+					ASDirective(as, as->buf, 0);
+					as->state = STATE_COMMENT;
+					break;
 				default:
 					if((c >= '0') && (c <= '7')) {
 						as->bufp = c - '0';
 						as->state = STATE_DIR_ARG;
+					} else if(((c >= 'A') && (c <= 'Z'))
+							|| ((c >= 'a') && (c <= 'z'))
+							|| (c == '_')) {
+						as->arg1 = &as->buf[as->bufp];
+						as->buf[as->bufp++] = c;
+						as->state = STATE_DIR_LABEL;
 					} else {
 						ASError(as, "invalid operand");
 						break;
@@ -1134,6 +1283,38 @@ void ASStep(AS* as)
 						as->bufp |= c - '0';
 					} else {
 						ASError(as, "invalid operand");
+						break;
+					}
+					break;
+			}
+			break;
+		case STATE_DIR_LABEL:
+			switch(c) {
+				case '\r':
+				case '\n':
+					as->buf[as->bufp++] = 0;
+					ASDirectiveResolveLabel(as, as->arg1);
+					as->state = STATE_BOL;
+					break;
+				case ' ':
+				case '\t':
+					as->buf[as->bufp++] = 0;
+					ASDirectiveResolveLabel(as, as->arg1);
+					as->state = STATE_EOL;
+					break;
+				case ';':
+					as->buf[as->bufp++] = 0;
+					ASDirectiveResolveLabel(as, as->arg1);
+					as->state = STATE_COMMENT;
+					break;
+				default:
+					if(((c >= 'A') && (c <= 'Z'))
+							|| ((c >= 'a') && (c <= 'z'))
+							|| ((c >= '0') && (c <= '9'))
+							|| (c == '_')) {
+						as->buf[as->bufp++] = c;
+					} else {
+						ASError(as, "invalid label");
 						break;
 					}
 					break;

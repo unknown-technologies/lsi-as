@@ -3,16 +3,17 @@
 
 #include "as.h"
 
+#define	CHECKSUM16(x)	((u8) (x) + (u8) ((x) >> 8))
+
 int main(int argc, char** argv)
 {
 	AS as;
-#if 0
 	int i;
-#endif
 	char* program;
 	size_t size;
 	FILE* f;
 	u16 tmp;
+	u8 checksum;
 	LABEL* start;
 
 	if(argc != 3) {
@@ -37,12 +38,6 @@ int main(int argc, char** argv)
 
 	printf("generated %d words\n", as.wr);
 
-#if 0
-	printf("program code:\n");
-	for(i = 0; i < as.wr; i++) {
-		printf("%06o\n", as.code[i]);
-	}
-#endif
 	if(start) {
 		printf("entry point: %06o\n", start->addr);
 	}
@@ -53,14 +48,18 @@ int main(int argc, char** argv)
 	fwrite(&tmp, 2, 1, f);
 	/* length */
 	tmp = as.wr * 2 + 6;
+	checksum = 1 + CHECKSUM16(tmp);
 	fwrite(&tmp, 2, 1, f);
 	/* address */
 	tmp = as.org;
+	checksum += CHECKSUM16(tmp);
 	fwrite(&tmp, 2, 1, f);
 	fwrite(as.code, as.wr, 2, f);
-	/* checksum [TODO: implement] */
-	tmp = 0;
-	fwrite(&tmp, 1, 1, f);
+	for(i = 0; i < as.wr; i++) {
+		checksum += CHECKSUM16(as.code[i]);
+	}
+	checksum = -checksum;
+	fwrite(&checksum, 1, 1, f);
 
 	/* header */
 	tmp = 1;
@@ -76,9 +75,8 @@ int main(int argc, char** argv)
 		tmp = 000001;
 		fwrite(&tmp, 2, 1, f);
 	}
-	/* checksum [TODO: implement] */
-	tmp = 0;
-	fwrite(&tmp, 1, 1, f);
+	checksum = -(1 + 6 + CHECKSUM16(tmp));
+	fwrite(&checksum, 1, 1, f);
 
 	fclose(f);
 

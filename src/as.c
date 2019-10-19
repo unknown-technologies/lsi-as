@@ -6,7 +6,7 @@
 
 void ASInit(AS* as)
 {
-	as->buf = (char*) malloc(256);
+	as->buf = (char*) malloc(512);
 	as->mnemonic = as->buf;
 	as->labels = NULL;
 	as->size = 65535;
@@ -50,9 +50,11 @@ void ASSetSource(AS* as, const char* source)
 #define	STATE_DIR_LABEL	12
 #define	STATE_STR	13
 #define	STATE_STR_ESC	14
-#define	STATE_EOL	15
-#define	STATE_END	16
-#define	STATE_ERROR	17
+#define	STATE_STR_SP	15
+#define	STATE_STR_CONT	16
+#define	STATE_EOL	17
+#define	STATE_END	18
+#define	STATE_ERROR	19
 
 static void ASPrintPrev(AS* as)
 {
@@ -497,6 +499,7 @@ u16 ASWriteOperand(AS* as, char* arg)
 			case STATE_IMMLBL:
 				if(((c >= 'A') && (c <= 'Z'))
 					|| ((c >= 'a') && (c <= 'z'))
+					|| ((c >= '0') && (c <= '9'))
 					|| (c == '_')) {
 					/* continue */
 				} else if(c == 0) {
@@ -1326,13 +1329,7 @@ void ASStep(AS* as)
 					as->state = STATE_STR_ESC;
 					break;
 				case '"':
-					if(as->bufp) {
-						WRITE(as->buf[0]);
-						as->bufp = 0;
-					} else {
-						WRITE(0);
-					}
-					as->state = STATE_SPACE;
+					as->state = STATE_STR_SP;
 					break;
 				case '\r':
 				case '\n':
@@ -1383,6 +1380,44 @@ void ASStep(AS* as)
 				as->bufp = 0;
 			}
 			as->state = STATE_STR;
+			break;
+		case STATE_STR_SP:
+			switch(c) {
+				case '\r':
+				case '\n':
+					if(as->bufp) {
+						WRITE(as->buf[0]);
+						as->bufp = 0;
+					} else {
+						WRITE(0);
+					}
+					as->state = STATE_BOL;
+					break;
+				case '\\':
+					as->state = STATE_STR_CONT;
+					break;
+				case ' ':
+				case '\t':
+					/* ignore */
+					break;
+				case '"':
+					as->state = STATE_STR;
+					break;
+				default:
+					ASError(as, "invalid character");
+					break;
+			}
+			break;
+		case STATE_STR_CONT:
+			switch(c) {
+				case '\r':
+				case '\n':
+					as->state = STATE_STR_SP;
+					break;
+				default:
+					ASError(as, "cont not followed by new line");
+					break;
+			}
 			break;
 		case STATE_EOL:
 			switch(c) {

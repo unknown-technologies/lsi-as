@@ -16,6 +16,7 @@ void ASInit(AS* as)
 	as->state = 0;
 	as->pc = 0;
 	as->org = as->pc;
+	as->fixups = NULL;
 }
 
 void ASDestroy(AS* as)

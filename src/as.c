@@ -53,9 +53,12 @@ void ASSetSource(AS* as, const char* source)
 #define	STATE_STR_ESC	14
 #define	STATE_STR_SP	15
 #define	STATE_STR_CONT	16
-#define	STATE_EOL	17
-#define	STATE_END	18
-#define	STATE_ERROR	19
+#define	STATE_EQ_SEP	17
+#define	STATE_EQ_NUM	18
+#define	STATE_EQ_NAME	19
+#define	STATE_EOL	20
+#define	STATE_END	21
+#define	STATE_ERROR	22
 
 static void ASPrintPrev(AS* as)
 {
@@ -195,22 +198,22 @@ WRITE(opcd | ASGetOffset(as, as->arg1))
 	as->code[wr_save] |= ASWriteOperand(as, as->arg2); \
 }
 
-#define	STATE_DEF	20
-#define	STATE_IMM	21
-#define	STATE_IMM0	22
-#define	STATE_IMMLBL	23
-#define	STATE_AD	24
-#define	STATE_R		25
-#define	STATE_MEM	26
-#define	STATE_MEM_PAR	27
-#define	STATE_IDX	28
-#define	STATE_IDX_LPAR	29
-#define	STATE_IDX_R	30
-#define	STATE_IDX_S	31
-#define	STATE_IDX_P	32
-#define	STATE_IDX_RPAR	33
-#define	STATE_IDX_END	34
-#define	STATE_LBL	35
+#define	STATE_DEF	30
+#define	STATE_IMM	31
+#define	STATE_IMM0	32
+#define	STATE_IMMLBL	33
+#define	STATE_AD	34
+#define	STATE_R		35
+#define	STATE_MEM	36
+#define	STATE_MEM_PAR	37
+#define	STATE_IDX	38
+#define	STATE_IDX_LPAR	39
+#define	STATE_IDX_R	40
+#define	STATE_IDX_S	41
+#define	STATE_IDX_P	42
+#define	STATE_IDX_RPAR	43
+#define	STATE_IDX_END	44
+#define	STATE_LBL	45
 
 int ASCheckLabel(const char* s)
 {
@@ -985,6 +988,12 @@ void ASStep(AS* as)
 					as->buf[as->bufp++] = 0;
 					as->state = STATE_SEPARATOR;
 					break;
+				case '=':
+					as->buf[as->bufp++] = 0;
+					as->arg1 = NULL;
+					as->arg2 = NULL;
+					as->state = STATE_EQ_SEP;
+					break;
 				default:
 					if((c >= 'a' && c <= 'z')
 						|| (c >= 'A' && c <= 'Z')
@@ -1072,6 +1081,12 @@ void ASStep(AS* as)
 					break;
 				case '\t':
 				case ' ':
+					break;
+				case '=':
+					as->buf[as->bufp++] = 0;
+					as->arg1 = NULL;
+					as->arg2 = NULL;
+					as->state = STATE_EQ_SEP;
 					break;
 				default:
 					as->arg1 = &as->buf[as->bufp];
@@ -1417,6 +1432,78 @@ void ASStep(AS* as)
 					break;
 				default:
 					ASError(as, "cont not followed by new line");
+					break;
+			}
+			break;
+		case STATE_EQ_SEP:
+			switch(c) {
+				case '\r':
+				case '\n':
+					ASError(as, "'=' not followed by an expression");
+					break;
+				case ' ':
+				case '\t':
+					break;
+				case '#':
+					as->bufp = 0;
+					as->state = STATE_EQ_NUM;
+					break;
+				default:
+					ASError(as, "illegal character");
+					break;
+			}
+			break;
+		case STATE_EQ_NUM:
+			switch(c) {
+				case '\r':
+				case '\n':
+					lbl = ASFindLabel(as, as->buf);
+					if(!lbl) {
+						lbl = (LABEL*) malloc(sizeof(LABEL));
+						lbl->name = strdup(as->buf);
+						lbl->next = as->labels;
+						as->labels = lbl;
+					}
+					lbl->addr = as->bufp;
+					lbl->resolved = 1;
+					ASFixup(as, lbl);
+					as->state = STATE_BOL;
+					break;
+				case ' ':
+				case '\t':
+					lbl = ASFindLabel(as, as->buf);
+					if(!lbl) {
+						lbl = (LABEL*) malloc(sizeof(LABEL));
+						lbl->name = strdup(as->buf);
+						lbl->next = as->labels;
+						as->labels = lbl;
+					}
+					lbl->addr = as->bufp;
+					lbl->resolved = 1;
+					ASFixup(as, lbl);
+					as->state = STATE_EOL;
+					break;
+				case ';':
+					lbl = ASFindLabel(as, as->buf);
+					if(!lbl) {
+						lbl = (LABEL*) malloc(sizeof(LABEL));
+						lbl->name = strdup(as->buf);
+						lbl->next = as->labels;
+						as->labels = lbl;
+					}
+					lbl->addr = as->bufp;
+					lbl->resolved = 1;
+					ASFixup(as, lbl);
+					as->state = STATE_EOL;
+					as->state = STATE_COMMENT;
+					break;
+				default:
+					if(c >= '0' && c <= '7') {
+						as->bufp <<= 3;
+						as->bufp |= c - '0';
+					} else {
+						ASError(as, "invalid character");
+					}
 					break;
 			}
 			break;

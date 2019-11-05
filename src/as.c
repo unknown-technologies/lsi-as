@@ -1419,6 +1419,15 @@ void ASStep(AS* as)
 				case '"':
 					as->state = STATE_STR;
 					break;
+				case ';':
+					if(as->bufp) {
+						WRITE(as->buf[0]);
+						as->bufp = 0;
+					} else {
+						WRITE(0);
+					}
+					as->state = STATE_COMMENT;
+					break;
 				default:
 					ASError(as, "invalid character");
 					break;

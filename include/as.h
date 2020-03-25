@@ -58,9 +58,9 @@ typedef struct {
 	LABEL*		labels;
 	FIXUP*		fixups;
 	u16*		code;
-	u16		size;
+	u32		size;
+	u32		rd;
 	u16		wr;
-	u16		rd;
 	u16		bufp;
 	u16		state;
 	u16		pc;

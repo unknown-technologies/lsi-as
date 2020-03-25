@@ -9,8 +9,8 @@ void ASInit(AS* as)
 	as->buf = (char*) malloc(512);
 	as->mnemonic = as->buf;
 	as->labels = NULL;
-	as->size = 65535;
-	as->code = (u16*) malloc(as->size * sizeof(u16));
+	as->size = 65536;
+	as->code = (u16*) malloc(as->size);
 	as->wr = 0;
 	as->rd = 0;
 	as->state = 0;
@@ -1540,6 +1540,14 @@ void ASStep(AS* as)
 void ASCompile(AS* as)
 {
 	while(as->state != STATE_END && as->state != STATE_ERROR) {
+		if((as->wr * sizeof(u16)) >= as->size) {
+			FILE* f = fopen("as.dump", "wb");
+			fwrite(as->code, as->size, 1, f);
+			fclose(f);
+			printf("wr: %hu\n", as->wr);
+			ASError(as, "output too large, wrote as.dump");
+			abort();
+		}
 		ASStep(as);
 	}
 

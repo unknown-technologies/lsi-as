@@ -264,6 +264,7 @@ void ASFixup(AS* as, LABEL* lbl)
 					diff >>= 1;
 					if((diff >= 0177) || (diff <= -0200)) {
 						ASError(as, "BTA out of range");
+						printf("LABEL=%s\n", lbl->name);
 						return;
 					}
 					as->code[fix->pos] |= diff & 0377;
@@ -366,6 +367,7 @@ u16 ASGetOffset(AS* as, const char* op)
 			off >>= 1;
 			if((off >= 0177) || (off <= -0200)) {
 				ASError(as, "BTA out of range");
+				printf("LABEL=%s\n", lbl->name);
 				return 0;
 			}
 			return off & 0377;

@@ -670,6 +670,10 @@ u16 ASWriteOperand(AS* as, char* arg)
 					value |= c - '0';
 				} else if(c == '(') {
 					state = STATE_IDX_LPAR;
+				} else if(c == 0) {
+					reg = 7;
+					WRITE(value - (as->pc + 2));
+					return 060 | reg | def;
 				} else {
 					ASError(as, "invalid index");
 					return 0;

@@ -207,13 +207,14 @@ WRITE(opcd | ASGetOffset(as, as->arg1))
 #define	STATE_MEM	36
 #define	STATE_MEM_PAR	37
 #define	STATE_IDX	38
-#define	STATE_IDX_LPAR	39
-#define	STATE_IDX_R	40
-#define	STATE_IDX_S	41
-#define	STATE_IDX_P	42
-#define	STATE_IDX_RPAR	43
-#define	STATE_IDX_END	44
-#define	STATE_LBL	45
+#define	STATE_IDX_NEG	39
+#define	STATE_IDX_LPAR	40
+#define	STATE_IDX_R	41
+#define	STATE_IDX_S	42
+#define	STATE_IDX_P	43
+#define	STATE_IDX_RPAR	44
+#define	STATE_IDX_END	45
+#define	STATE_LBL	46
 
 int ASCheckLabel(const char* s)
 {
@@ -555,7 +556,10 @@ u16 ASWriteOperand(AS* as, char* arg)
 				}
 				break;
 			case STATE_AD:
-				if(c != '(') {
+				if(c >= '0' && c <= '7') {
+					value = c - '0';
+					state = STATE_IDX_NEG;
+				} else if(c != '(') {
 					ASError(as, "invalid character");
 					return 0;
 				} else {
@@ -673,6 +677,22 @@ u16 ASWriteOperand(AS* as, char* arg)
 				} else if(c == 0) {
 					reg = 7;
 					WRITE(value - (as->pc + 2));
+					return 060 | reg | def;
+				} else {
+					ASError(as, "invalid index");
+					return 0;
+				}
+				break;
+			case STATE_IDX_NEG:
+				if((c >= '0') && (c <= '7')) {
+					value <<= 3;
+					value |= c - '0';
+				} else if(c == '(') {
+					value = -value;
+					state = STATE_IDX_LPAR;
+				} else if(c == 0) {
+					reg = 7;
+					WRITE((as->pc + 2) - value);
 					return 060 | reg | def;
 				} else {
 					ASError(as, "invalid index");

@@ -69,6 +69,12 @@ int main(int argc, char** argv)
 	ASSetSource(&as, program);
 	ASCompile(&as);
 
+	if(ASIsError(&as)) {
+		ASDestroy(&as);
+		free(program);
+		return 1;
+	}
+
 	start = ASFindLabel(&as, "_START");
 
 	if(!quiet) {

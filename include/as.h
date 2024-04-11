@@ -67,10 +67,11 @@ typedef struct {
 	u16		org;
 } AS;
 
-void ASInit(AS* as);
-void ASDestroy(AS* as);
-void ASSetSource(AS* as, const char* source);
-void ASCompile(AS* as);
-LABEL* ASFindLabel(AS* as, const char* name);
+void	ASInit(AS* as);
+void	ASDestroy(AS* as);
+void	ASSetSource(AS* as, const char* source);
+void	ASCompile(AS* as);
+LABEL*	ASFindLabel(AS* as, const char* name);
+int	ASIsError(AS* as);
 
 #endif

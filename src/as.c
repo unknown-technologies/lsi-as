@@ -109,6 +109,11 @@ void __ASError(AS* as, int line, const char* msg)
 	as->state = STATE_ERROR;
 }
 
+int ASIsError(AS* as)
+{
+	return as->state == STATE_ERROR;
+}
+
 #define	MATCH(mnemo)	!strcmp(as->mnemonic, mnemo)
 #define	WRITE(opcd)	as->code[as->wr++] = (opcd), as->pc += 2
 

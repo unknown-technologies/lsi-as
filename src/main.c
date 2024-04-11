@@ -26,12 +26,17 @@ int main(int argc, char** argv)
 	LABEL* start;
 
 	int print_labels = 0;
+	int quiet = 0;
 
 	const char* execfn = *argv;
 
 	if(argc > 1) {
 		if(!strcmp("-p", argv[1])) {
 			print_labels = 1;
+			argc--;
+			argv++;
+		} else if(!strcmp("-q", argv[1])) {
+			quiet = 1;
 			argc--;
 			argv++;
 		}
@@ -66,9 +71,11 @@ int main(int argc, char** argv)
 
 	start = ASFindLabel(&as, "_START");
 
-	printf("generated %d words\n", as.wr);
+	if(!quiet) {
+		printf("generated %d words\n", as.wr);
+	}
 
-	if(start) {
+	if(start && !quiet) {
 		printf("entry point: %06o\n", start->addr);
 	}
 

@@ -907,6 +907,11 @@ void ASDirective(AS* as, const char* name, u16 arg)
 		as->org = arg;
 	} else if(!strcmp(name, "WORD")) {
 		WRITE(arg);
+	} else if(!strcmp(name, "WORDS")) {
+		u16 i;
+		for(i = 0; i < arg; i++) {
+			WRITE(0);
+		}
 	} else {
 		ASError(as, "unknown directive");
 	}

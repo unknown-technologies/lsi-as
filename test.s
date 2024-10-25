@@ -3,34 +3,13 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	.ORG	1000
 
-_start:
-loop:	TSTB	@#177564
-	BPL	loop
+_START:
+LOOP:	TSTB	@#177564
+	BPL	LOOP
 	CMP	R0,	#40
-	BLO	next
+	BLO	NEXT
 	CMP	R0,	#177
-	BHIS	next
+	BHIS	NEXT
 	MOVB	R0,	@#177566
-next:	INC	R0
-	JMP	loop
-
-;;_start:
-;;	MOV	#0,	R0
-;;loop:	CMP	R0,	#40
-;;	BLO	next
-;;	CMP	R0,	#177
-;;	BEQ	rst
-;;	BHIS	next
-;;	JSR	PC,	outch
-;;next:	INC	R0
-;;	JMP	loop
-;;rst:	MOV	#15,	R0
-;;	JSR	PC,	outch
-;;	MOV	#12,	R0
-;;	JSR	PC,	outch
-;;	HALT
-;;
-;;outch:	TSTB	@#177564
-;;	BPL	outch
-;;	MOVB	R0,	@#177566
-;;	RTS	PC
+NEXT:	INC	R0
+	JMP	LOOP

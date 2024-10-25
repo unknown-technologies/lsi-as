@@ -22,9 +22,32 @@ lsi-as [-q] [-p] in.s out.bin
 Syntax
 ------
 
-LSI-AS accepts all mnemonics of the PDP-11/03 as written in the processor
-handbook. In addition, it supports labels, constants, words, and text strings.
-For a basic example, look at the included `test.s` file.
+LSI-AS accepts all mnemonics of the PDP-11/03 as described in the processor
+handbook. In addition, it supports comments, labels, constants, words, and text
+strings.
+
+The entry point is defined by the `_START` label, the initial address is
+defined by the `.ORG` instruction. The following example demonstrates how to
+set the entry point, how to use labels, and how to define a text string.
+
+```
+        .ORG    4000
+
+_START: MOV     #1000,  SP
+        MOV     #TEXT,  R0
+        JSR     PC,     PRINT
+        HALT
+
+PRINT:  TSTB    (R0)
+        BEQ     PREND
+PRWAIT: TSTB    @#177564
+        BPL     PRWAIT
+        MOVB    (R0)+,  @#177566
+        BR      PRINT
+PREND:  RTS     PC
+
+TEXT:   "Hello world!\r\n"
+```
 
 
 Why?

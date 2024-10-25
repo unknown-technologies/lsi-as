@@ -14,6 +14,18 @@ int cmp(const void* a, const void* b)
 	return l1->addr - l2->addr;
 }
 
+void print_usage(const char* execfn, int detail)
+{
+	printf("Usage: %s [-q] [-p] in.s out.bic\n", execfn);
+	if(detail) {
+		printf("\n"
+			"OPTIONS\n"
+			"    -h      Show this help message and exit\n"
+			"    -p      Print all defined labels/constants on exit\n"
+			"    -q      Quiet mode, do not print entry point and size\n");
+	}
+}
+
 int main(int argc, char** argv)
 {
 	AS as;
@@ -30,26 +42,72 @@ int main(int argc, char** argv)
 
 	const char* execfn = *argv;
 
-	if(argc > 1) {
-		if(!strcmp("-p", argv[1])) {
+	const char* infilename = NULL;
+	const char* outfilename = NULL;
+
+	argc--;
+	argv++;
+
+	for(; argc; argc--, argv++) {
+		if(!strcmp("-p", *argv)) {
 			print_labels = 1;
-			argc--;
-			argv++;
-		} else if(!strcmp("-q", argv[1])) {
+		} else if(!strcmp("-q", *argv)) {
 			quiet = 1;
+		} else if(!strcmp("-h", *argv)) {
+			print_usage(execfn, 1);
+			return 0;
+		} else if(!strcmp("-i", *argv)) {
+			if(argc > 1) {
+				infilename = argv[1];
+			} else {
+				printf("Missing argument: input file\n");
+				return 1;
+			}
 			argc--;
 			argv++;
+		} else if(!strcmp("-o", *argv)) {
+			if(argc > 1) {
+				outfilename = argv[1];
+			} else {
+				printf("Missing argument: output file\n");
+				return 1;
+			}
+			argc--;
+			argv++;
+		} else if(**argv != '-') {
+			break;
+		} else {
+			printf("Unknown option: %s\n", *argv);
+			return 1;
 		}
 	}
 
-	if(argc != 3) {
-		printf("Usage: %s in.s out.bic\n", execfn);
+	if(argc > 0) {
+		infilename = argv[0];
+	}
+
+	if(argc > 1) {
+		outfilename = argv[1];
+	}
+
+	if(argc > 2) {
+		print_usage(execfn, 0);
 		return 1;
 	}
 
-	f = fopen(argv[1], "rb");
+	if(!infilename) {
+		printf("ERROR: no input file\n");
+		return 1;
+	}
+
+	if(!outfilename) {
+		printf("ERROR: no output file\n");
+		return 1;
+	}
+
+	f = fopen(infilename, "rb");
 	if(!f) {
-		printf("ERROR: cannot open file \"%s\"\n", argv[1]);
+		printf("ERROR: cannot open file \"%s\"\n", infilename);
 		return 1;
 	}
 
@@ -85,9 +143,9 @@ int main(int argc, char** argv)
 		printf("entry point: %06o\n", start->addr);
 	}
 
-	f = fopen(argv[2], "wb");
+	f = fopen(outfilename, "wb");
 	if(!f) {
-		printf("ERROR: cannot open file \"%s\"\n", argv[2]);
+		printf("ERROR: cannot open file \"%s\"\n", outfilename);
 		return 1;
 	}
 	/* header */

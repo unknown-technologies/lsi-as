@@ -14,12 +14,27 @@ INCLUDES	:=	include
 SOURCES		:=	src
 BUILD		:=	build
 
-CFLAGS		:=	-O3 -g -Wall -std=c89 \
-			-ffunction-sections -fdata-sections \
-			$(INCLUDE) -DUNIX -fsanitize=address \
-			-D_XOPEN_SOURCE=500
+OPT		:=	-O3 -g
 
-LDFLAGS		:=	-Wl,-x -Wl,--gc-sections -fsanitize=address
+ifdef NDEBUG
+DEBUG		:=	-DNDEBUG
+ASAN		:=	0
+else
+ASAN		:=	1
+endif
+
+ifeq ($(ASAN),1)
+ASANFLG		:=	-fsanitize=address
+else
+ASANFLG		:=
+endif
+
+CFLAGS		:=	$(OPT) -Wall -std=c89 \
+			-ffunction-sections -fdata-sections \
+			$(INCLUDE) -DUNIX -D_XOPEN_SOURCE=500 \
+			$(ASANFLG)
+
+LDFLAGS		:=	-Wl,-x -Wl,--gc-sections $(OPT) $(ASANFLG)
 
 CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 

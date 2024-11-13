@@ -119,7 +119,11 @@ int main(int argc, char** argv)
 		printf("ERROR: cannot allocate memory\n");
 		return 1;
 	}
-	fread(program, 1, size, f);
+
+	if(fread(program, 1, size, f) != size) {
+		printf("ERROR: cannot read file \"%s\"\n", infilename);
+		return 1;
+	}
 	program[size] = 0;
 	fclose(f);
 

@@ -1,0 +1,175 @@
+.\" vim:set tw=72 noet:
+.\" Bulleted paragraph
+.de bP
+.ie n  .IP \(bu 4
+.el    .IP \(bu 2
+..
+.
+.TH LSI-AS "1" "August 2025" "unknown technologies" "User Commands"
+.
+.SH NAME
+lsi-as \- Lightweight assembler for DEC PDP-11/03-L microcomputers
+.
+.SH SYNOPSIS
+.B lsi-as
+[\fI\,OPTION\/\fR]... \fIinput.s\fR \fIoutput.bin\fR
+.
+.SH DESCRIPTION
+.PP
+The \fBlsi-as\fR program is a lightweight assembler for the DEC
+PDP-11/03-L (aka \(lqLSI-11\(rq) microcomputer. It uses a slightly
+different and simpler syntax than the official MACRO11 language.
+.TP
+\fB\-h\fR
+Display a short help message and exit.
+.TP
+\fB\-p\fR
+Print all defined labels/constants on exit.
+.TP
+\fB\-q\fR
+Quiet mode, do not print entry point and size.
+.
+.PP
+This assembler produces program code in absolute loader format.
+.
+.
+.SH "ASSEMBLY LANGUAGE"
+The assembler supports all instructions and addressing modes of the
+PDP-11/03 (\(lqLSI-11\(rq) CPU according to the LSI-11 Processor
+Handbook, including the EIS and FIS instruction set extensions.
+.
+.PP
+Since the main design goal of this assembler is to use as little memory
+during compilation as possible, the syntax is rather simplistic. There
+are no advanced features like expressions evaluated at compile time or
+macros.
+.
+.SS Comments
+Comments are introduced with a \fB;\fR character and end at the end of
+the line. The following example shows how comments can be used:
+.PP
+.RS
+.EX
+; this is a comment line
+\fBHALT\fR ; halt the CPU
+.EE
+.RE
+.
+.SS Labels
+Labels can be defined with the following syntax:
+.PP
+.RS
+.EX
+\fILABEL\fB:\fR
+.EE
+.RE
+.PP
+\fILABEL\fR is case sensitive, can have an arbitrary length, and can be
+referenced by code. It is not necessary to define labels before they are
+used. Valid labels consist of alphanumeric characters (\fBA-Za-z0-9\fR)
+as well as the underscore character (\fB_\fR) and may not start with a
+number. In addition, it is possible to have instructions on the same
+line as a label definition:
+.PP
+.RS
+.EX
+\fIEND\fB:\fR \fBHALT\fR
+.EE
+.RE
+.
+.PP
+Labels can be used as branch targets and as constants in immediate
+operands. To use a label as an immediate operand, it has to be prefixed
+with \fB#\fR. The value of a label in this case is the address of the
+label.
+.
+.SS Constants
+Constants can be defined with the following syntax:
+.PP
+.RS
+.EX
+\fIXCSR\fR \fB=\fR \fB#\fI177564\fR
+.EE
+.RE
+.PP
+In this example, the constant \fIXCSR\fR is defined with the value
+\fI177564\fR. This constant can be used via \fB#\fIXCSR\fR as operand in
+instructions, just like a label:
+.PP
+.RS
+.EX
+\fBTSTB\fR    \fB@#\fIXCSR\fR
+.EE
+.RE
+.
+.PP
+Internally, constants and labels are identical. Labels are constants
+which are assigned to the current address while constants are assigned
+to a user defined fixed value.
+.
+.SS Directives
+The following directives are interpreted by the assembler:
+.TP
+\fB.ORG\fR \fI1000\fR
+The following code and data will be put at \fI1000\fR which can denote
+any valid memory address.
+.TP
+\fB.WORD\fR \fI1234\fR
+This directive places the word \fI1234\fR (which can be any valid
+16bit word) in memory without any further interpretation.
+.TP
+\fB.WORD\fR \fILABEL\fR
+This directive places a word with the value of \fILABEL\fR in memory.
+.
+.SS Numbers
+All numbers are in octal.
+.
+.SS Strings
+A line containing only a \fB"\fIString\fB"\fR is interpreted as an ASCII
+string which is put in memory as is. The following example places the
+string \fIHello World\fR in memory and marks it with the label
+\fITEXT\fR:
+.PP
+.RS
+.EX
+\fITEXT\fB:\fR \fB"\fIHello World\fB"\fR
+.EE
+.RE
+.
+.SH EXAMPLE
+The following example program outputs all printable ASCII characters
+forever:
+.PP
+.RS
+.EX
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; This is a simple program which outputs the ASCII table. ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+        \fB.ORG\fR    \fI1000\fR
+
+XCSR    \fB=\fR       \fB#\fI177564\fR
+XBUF    \fB=\fR       \fB#\fI177566\fR
+
+\fI_START\fB:\fR
+\fILOOP\fB:\fR   \fBTSTB\fR    \fB@#\fIXCSR\fR
+        \fBBPL\fR     LOOP
+        \fBCMP\fR     \fBR0\fR,     \fB#\fI40\fR
+        \fBBLO\fR     NEXT
+        \fBCMP\fR     \fBR0\fR,     \fB#\fI177\fR
+        \fBBHIS\fR    NEXT
+        \fBMOVB\fR    \fBR0\fR,     \fB@#\fIXBUF\fR
+\fINEXT\fB:\fR   \fBINC\fR     \fBR0\fR
+        \fBJMP\fR     LOOP
+.EE
+.RE
+.
+.SH AUTHOR
+Written by unknown.
+.
+.SH "REPORTING BUGS"
+To report bugs, use the issue tracker at
+.UR https://github.com/unknown-technologies/lsi-as
+.UE
+.
+.SH "SEE ALSO"
+.MR lsi-11 1
